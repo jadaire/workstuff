@@ -1,0 +1,135 @@
+from napalm import get_network_driver
+import json
+
+# Function to establish a connection to the device
+def connect_to_device(hostname, username, password, device_type="ios"):
+    driver = get_network_driver(device_type)
+    device = driver(hostname=hostname, username=username, password=password)
+    device.open()
+    return device
+
+# Function to push ACL and update interface configuration
+def push_acl_and_update_interface(hostname, username, password, acl_config, interface, direction, acl_name):
+    try:
+        # Connect to the device
+        device = connect_to_device(hostname, username, password)
+
+        # Push the ACL configuration
+        print("Pushing ACL configuration...")
+        device.load_merge_candidate(config=acl_config)
+        diffs = device.compare_config()
+        if diffs:
+            print("Differences detected:")
+            print(diffs)
+            device.commit_config()
+            print("ACL configuration pushed successfully.")
+        else:
+            print("No changes detected. ACL configuration is up to date.")
+            device.discard_config()
+
+        # Update the interface configuration
+        print("Updating interface configuration...")
+        interface_config = f"interface {interface}\nip access-group {acl_name} {direction}"
+        device.load_merge_candidate(config=interface_config)
+        diffs = device.compare_config()
+        if diffs:
+            print("Differences detected:")
+            print(diffs)
+            device.commit_config()
+            print("Interface configuration updated successfully.")
+        else:
+            print("No changes detected. Interface configuration is up to date.")
+            device.discard_config()
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    finally:
+        device.close()
+
+# Example Usage
+if __name__ == "__main__":
+    hostname = "192.168.1.1"
+    username = "admin"
+    password = "password"
+    
+    # Example ACL configuration
+    acl_config = """
+    ip access-list extended ACL_NAME
+      permit tcp any any eq 80
+      permit tcp any any eq 443
+      deny ip any any
+    """
+
+    interface = "GigabitEthernet0/1"
+    direction = "in"  # 'in' or 'out'
+    acl_name = "ACL_NAME"
+
+    push_acl_and_update_interface(hostname, username, password, acl_config, interface, direction, acl_name)
+
+
+
+
+from napalm import get_network_driver
+
+# Function to establish a connection to the device
+def connect_to_device(hostname, username, password, device_type="ios"):
+    driver = get_network_driver(device_type)
+    device = driver(hostname=hostname, username=username, password=password)
+    device.open()
+    return device
+
+# Function to get interfaces with ACLs configured
+def get_interfaces_with_acl(hostname, username, password):
+    try:
+        # Connect to the device
+        device = connect_to_device(hostname, username, password)
+
+        print("Retrieving configuration...")
+        config = device.get_config()['running']
+
+        interfaces_with_acls = {}
+        current_interface = None
+
+        # Parse the running configuration to find ACLs applied to interfaces
+        for line in config.splitlines():
+            line = line.strip()
+
+            # Match interface configuration block
+            if line.startswith("interface"):
+                current_interface = line.split()[1]
+
+            # Check for ACLs applied (input/output)
+            if current_interface and ("ip access-group" in line):
+                direction = "in" if "in" in line else "out"
+                acl_name = line.split()[-2]
+                if current_interface not in interfaces_with_acls:
+                    interfaces_with_acls[current_interface] = []
+                interfaces_with_acls[current_interface].append({
+                    "acl_name": acl_name,
+                    "direction": direction
+                })
+
+        device.close()
+        return interfaces_with_acls
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return {}
+
+# Example Usage
+if __name__ == "__main__":
+    hostname = "192.168.1.1"
+    username = "admin"
+    password = "password"
+
+    interfaces_acls = get_interfaces_with_acl(hostname, username, password)
+
+    if interfaces_acls:
+        print("Interfaces with ACLs configured:")
+        for interface, acls in interfaces_acls.items():
+            print(f"Interface: {interface}")
+            for acl in acls:
+                print(f"  ACL Name: {acl['acl_name']}, Direction: {acl['direction']}")
+    else:
+        print("No ACLs configured on any interface.")
